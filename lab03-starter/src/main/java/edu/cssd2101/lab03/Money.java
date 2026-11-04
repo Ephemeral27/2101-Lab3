@@ -32,7 +32,17 @@ public final class Money {
      * @throws IllegalArgumentException for a negative price or invalid rate
      */
     public static long discounted(long cents, int basisPoints) {
-        // TODO T1: implement the documented contract; see the acceptance tests.
-        throw new UnsupportedOperationException("TODO T1");
+        // TODO T1: -Saronica
+        if (cents < 0) {
+        throw new IllegalArgumentException("negative cents");
+    }
+    if (basisPoints < 0 || basisPoints > 10000) {
+        throw new IllegalArgumentException("basisPoints must be 0..10000");
+    }
+    return BigDecimal.valueOf(cents)
+            .multiply(BigDecimal.valueOf(10000 - basisPoints))
+            .divide(BigDecimal.valueOf(10000), 0, RoundingMode.HALF_EVEN)
+            .longValueExact();
+
     }
 }
