@@ -55,6 +55,12 @@ public final class BundleBuilder {
      */
     public Bundle build() {
         // TODO T3: implement the documented contract; see the acceptance tests.
-        throw new UnsupportedOperationException("TODO T3");
+        //check if there are children in bundle
+        if (children.isEmpty()){
+            throw new IllegalArgumentException();
+        }
+        List<Component> copyChildren = List.copyOf(children);
+        return new Bundle(name, copyChildren, basisPoints);
+        //throw new UnsupportedOperationException("TODO T3");
     }
 }
