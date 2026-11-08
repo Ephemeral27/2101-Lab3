@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 /** Immutable-after-construction prefix trie over Unicode code points, ordered by catalog ID. */
 public final class PrefixIndex {
@@ -41,6 +42,29 @@ public final class PrefixIndex {
      */
     public List<Material> search(String prefix, int limit) {
         // TODO T5: implement the documented contract; see the acceptance tests.
-        throw new UnsupportedOperationException("TODO T5");
+         Objects.requireNonNull(prefix);
+
+    if (limit < 0) {
+        throw new IllegalArgumentException("limit cannot be negative");
+    }
+
+    if (limit == 0) {
+        return List.of();
+    }
+
+    String key = Material.searchKey(prefix);
+    Node current = root;
+
+    for (int point : key.codePoints().toArray()) {
+        current = current.children.get(point);
+
+        if (current == null) {
+            return List.of();
+        }
+    }
+
+    int resultSize = Math.min(limit, current.matches.size());
+
+    return List.copyOf(current.matches.subList(0, resultSize));
     }
 }

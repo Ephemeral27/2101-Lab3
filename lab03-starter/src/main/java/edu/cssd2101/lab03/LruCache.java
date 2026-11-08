@@ -39,7 +39,17 @@ public final class LruCache<K, V> {
      */
     public synchronized Optional<V> get(K key) {
         // TODO T5: implement the documented contract; see the acceptance tests.
-        throw new UnsupportedOperationException("TODO T5");
+         java.util.Objects.requireNonNull(key);
+
+    V value = entries.get(key);
+
+    if (value == null) {
+        misses++;
+        return Optional.empty();
+    }
+
+    hits++;
+    return Optional.of(value);
     }
 
     /**
@@ -50,7 +60,16 @@ public final class LruCache<K, V> {
      */
     public synchronized void put(K key, V value) {
         // TODO T5: implement the documented contract; see the acceptance tests.
-        throw new UnsupportedOperationException("TODO T5");
+    java.util.Objects.requireNonNull(key);
+    java.util.Objects.requireNonNull(value);
+
+    entries.put(key, value);
+
+    if (entries.size() > capacity) {
+        K leastRecentlyUsed = entries.keySet().iterator().next();
+        entries.remove(leastRecentlyUsed);
+        evictions++;
+    }
     }
 
     /** Removes entries while retaining lifetime hit, miss, and eviction counts. */

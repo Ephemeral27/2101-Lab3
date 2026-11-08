@@ -36,7 +36,28 @@ public final class SearchService {
      */
     public synchronized List<Material> search(String prefix, int limit) {
         // TODO T5: implement the documented contract; see the acceptance tests.
-        throw new UnsupportedOperationException("TODO T5");
+     Objects.requireNonNull(prefix);
+
+    if (limit < 0) {
+        throw new IllegalArgumentException("limit cannot be negative");
+    }
+
+    Snapshot snapshot = catalog.snapshot();
+
+    if (index == null || indexedVersion != snapshot.version()) {
+        index = new PrefixIndex(snapshot);
+        indexedVersion = snapshot.version();
+        cache.clear();
+        builds++;
+    }
+
+    Query query = new Query(Material.searchKey(prefix), limit);
+
+    return cache.get(query).orElseGet(() -> {
+        List<Material> results = index.search(prefix, limit);
+        cache.put(query, results);
+        return results;
+    });
     }
 
     /**
