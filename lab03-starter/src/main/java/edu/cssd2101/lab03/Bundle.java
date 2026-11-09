@@ -3,6 +3,8 @@ package edu.cssd2101.lab03;
 import java.util.List;
 import java.util.Objects;
 
+import static edu.cssd2101.lab03.Money.discounted;
+
 /**
  * Composite that discounts the sum of already-priced children once at this node.
  *
@@ -26,7 +28,7 @@ public record Bundle(String name, List<Component> children, int basisPoints) imp
         if (name.isEmpty() || children.isEmpty()) {
             throw new IllegalArgumentException("empty bundle");
         }
-        Money.discounted(0, basisPoints);
+        discounted(0, basisPoints);
     }
 
     @Override
@@ -37,7 +39,8 @@ public record Bundle(String name, List<Component> children, int basisPoints) imp
             //totalPrice += child.priceCents();
             totalPrice = Math.addExact(totalPrice, child.priceCents());
         }
-        return totalPrice;
+        return discounted(totalPrice, basisPoints);
+        //return totalPrice;
         //throw new UnsupportedOperationException("TODO T3");
     }
 
