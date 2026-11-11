@@ -1,5 +1,8 @@
 package edu.cssd2101.lab03;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -47,4 +50,159 @@ public final class Main {
         FlattenVisitor flatVisitor = new FlattenVisitor();
         System.out.println(flatVisitor.visit(outerBundle));
     }
+
+
+    /**
+
+     * Demonstrates component composition, discount approval,
+
+     * catalog events, searching, caching, and persistence.
+
+     *
+
+     * @throws IOException if temporary storage operations fail
+
+     */
+
+    private static void demonstrateT7() throws IOException {
+
+        // Create materials for the T7 demonstration
+
+        Material book = MaterialFactory.create("book", "B1", "Java Patterns", "24.99");
+
+        Material ebook = MaterialFactory.create("ebook", "E1", "Java Programming", "20.00");
+
+        // 2. Demonstrate component composition
+
+        Component leaf = new Leaf(book);
+
+        Component wrapped = new AddOn("Gift wrap", leaf, 900);
+
+        System.out.println("wrapped cents=" + wrapped.priceCents());
+
+        // 3. Create a discounted bundle
+
+        Bundle bundle = new BundleBuilder("Java bundle")
+
+                .add(new Leaf(book))
+
+                .add(new Leaf(ebook))
+
+                .discount(3000)
+
+                .build();
+
+        System.out.println("bundle cents=" + bundle.priceCents());
+
+        // 4. Demonstrate shipping visitor
+
+        long shipping = wrapped.accept(new ShippingVisitor());
+
+        System.out.println("shipping cents=" + shipping);
+
+        // 5. Demonstrate discount approval
+
+        DiscountChain approvals = new DiscountChain();
+
+        DiscountChain.Decision decision = approvals.decide(book.cents(), 2000);
+
+        System.out.println("approval=" + decision.approvedBy().orElse("Declined"));
+
+        // 6. Create catalog and event service
+
+        InMemoryCatalog catalog = new InMemoryCatalog();
+
+        Events events = new Events();
+
+        var subscription = events.subscribe(
+
+                change -> System.out.println("event version=" + change.version()));
+
+        CatalogService service = new CatalogService(catalog, new JsonCatalogRepository(Path.of("catalog.json")), events);
+
+        try {
+
+            service.add(book);
+
+            service.add(ebook);
+
+        } finally {
+
+            subscription.close();
+
+        }
+
+        // 7. Demonstrate prefix search and cache
+
+        SearchService search = new SearchService(catalog, 3);
+
+        List<Material> firstSearch = search.search("java", 10);
+
+        search.search("java", 10);
+
+        System.out.println(
+
+                "prefix IDs=" +
+
+                        firstSearch.stream()
+
+                                .map(Material::id)
+
+                                .toList()
+
+        );
+
+        LruCache.Stats stats = search.cacheStats();
+
+        System.out.println(
+
+                "cache hits=" + stats.hits()
+
+                        + " misses=" + stats.misses()
+
+        );
+
+        // 8. Demonstrate persistence using a temporary directory
+
+        Path directory = Files.createTempDirectory("lab03-demo-");
+
+        try {
+
+            Path file = directory.resolve("catalog.json");
+
+            CatalogRepository repository = new JsonCatalogRepository(file);
+
+            repository.save(catalog.snapshot().materials());
+
+            InMemoryCatalog restored = new InMemoryCatalog();
+
+            restored.replaceAll(repository.load());
+
+            System.out.println("restored IDs=" + restored.snapshot().materials()
+
+                                    .stream()
+
+                                    .map(Material::id)
+
+                                    .toList()
+
+            );
+
+            System.out.println("snapshot version=" + catalog.snapshot().version());
+
+        } finally {
+
+            Files.deleteIfExists(directory.resolve("catalog.json"));
+
+            Files.deleteIfExists(directory);
+
+        }
+
+    }
+
 }
+
+
+
+
+
