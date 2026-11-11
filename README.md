@@ -7,4 +7,4 @@
 -Dominik Lizak, Student number: 222279269, email: dominikl@my.yorku.ca, contribution: T2
 -Saronica Routh, Student number: 222319016, email: saronica@my.yorku.ca, contribution: T5
 -Sophia Pimenovsky, Student number: 221963632, email: sophip@my.yorku.ca, contribution: T6
--Homaira Hotak, Student number: 222601165, email: homairah@my.yorku.ca, contribution: T3
+-Homaira Hotak, Student number: 222601165, email: homairah@my.yorku.ca, contribution: T5
