@@ -13,7 +13,13 @@ import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Objects;
+import java.util.Set;
 
 /**
  * Local JSON snapshot adapter with strict schema and atomic replacement, or an explicit failure.
@@ -22,6 +28,7 @@ import java.util.*;
  * instances/processes require external coordination. Atomic rename is not fsync.
  */
 public final class JsonCatalogRepository implements CatalogRepository {
+
     /** Maximum encoded document size: one mebibyte. */
     public static final int MAX_BYTES = 1_048_576;
 
@@ -32,19 +39,18 @@ public final class JsonCatalogRepository implements CatalogRepository {
 
     private final Path path;
     private final Mover mover;
+
     private final ObjectMapper mapper =
             new ObjectMapper(
-                            JsonFactory.builder()
-                                    .enable(StreamReadFeature.STRICT_DUPLICATE_DETECTION)
-                                    .build())
+                    JsonFactory.builder()
+                            .enable(StreamReadFeature.STRICT_DUPLICATE_DETECTION)
+                            .build())
                     .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
 
     /**
-     * Configures a repository without creating or truncating storage.
+     * Creates a repository for the supplied destination.
      *
-     * @param path trusted destination, resolved to an absolute normalized path
-     * @throws IllegalArgumentException if the path has no filename
-     * @throws NullPointerException if path is null
+     * @param path destination path
      */
     public JsonCatalogRepository(Path path) {
         this(
@@ -60,16 +66,20 @@ public final class JsonCatalogRepository implements CatalogRepository {
     JsonCatalogRepository(Path path, Mover mover) {
         this.path = Objects.requireNonNull(path).toAbsolutePath().normalize();
         this.mover = Objects.requireNonNull(mover);
+
         if (this.path.getFileName() == null) {
-            throw new IllegalArgumentException("destination needs a filename");
+            throw new IllegalArgumentException("Destination needs a filename");
         }
     }
-
 
     public static void requireExactFields(
             JsonNode node,
             Set<String> expectedFields
     ) throws IOException {
+
+        if (node == null || !node.isObject()) {
+            throw new IOException("Expected a JSON object");
+        }
 
         Set<String> actualFields = new HashSet<>();
 
@@ -86,181 +96,171 @@ public final class JsonCatalogRepository implements CatalogRepository {
 
     @Override
     public synchronized List<Material> load() throws IOException {
-        // TODO T6: implement the documented contract; see the acceptance tests.
-        //throw new UnsupportedOperationException("TODO T6");
-            byte[] bytes;
 
-            // 1. Read the file, enforcing the size limit.
-            try (InputStream in = Files.newInputStream(path)) {
-                bytes = in.readNBytes(MAX_BYTES + 1);
-            }
-
-            if (bytes.length > MAX_BYTES) {
-                throw new IOException("File exceeds size limit");
-            }
-
-            // 2. Parse the JSON.
-            JsonNode root = mapper.readTree(bytes);
-
-            if (root == null || !root.isObject()) {
-                throw new IOException("Expected a JSON object");
-            }
-
-            // 3. Validate the root fields.
-            requireExactFields(root, Set.of("materials"));
-
-            JsonNode materialsNode = root.get("materials");
-
-            if (materialsNode == null || !materialsNode.isArray()) {
-                throw new IOException("Expected materials to be an array");
-            }
-
-            // 4. Parse and validate every material.
-            List<Material> materials = new ArrayList<>();
-            Set<String> ids = new HashSet<>();
-
-            for (JsonNode node : materialsNode) {
-                if (!node.isObject()) {
-                    throw new IOException("Expected a material object");
-                }
-
-                requireExactFields(node, Set.of("id", "title", "kind", "cents"));
-
-                JsonNode idNode = node.get("id");
-                JsonNode titleNode = node.get("title");
-                JsonNode kindNode = node.get("kind");
-                JsonNode centsNode = node.get("cents");
-
-                if (!idNode.isTextual() || !titleNode.isTextual() || !kindNode.isTextual()
-                        || !centsNode.isIntegralNumber() || !centsNode.canConvertToLong()) {
-                    throw new IOException("Invalid material field types");
-                }
-
-                long cents = centsNode.longValue();
-
-                if (cents < 0) {
-                    throw new IOException("Cents cannot be negative");
-                }
-
-                Material material;
-
-                try {
-                    Material.Kind kind = Material.Kind.valueOf(kindNode.textValue());
-
-                    material = new Material(idNode.textValue(), titleNode.textValue(), kind, cents);
-                } catch (IllegalArgumentException e) {
-                    throw new IOException("Invalid material data", e);
-                }
-
-                if (!ids.add(material.id())) {
-                    throw new IOException("Duplicate material ID");
-                }
-
-                materials.add(material);
-            }
-
-            // 5. Sort and return.
-            materials.sort(Comparator.comparing(Material::id));
-
-            return materials;
+        // A missing file represents an empty inventory.
+        if (Files.notExists(path)) {
+            return List.of();
         }
 
+        byte[] bytes;
 
-
-
-
-
-    private static void fields(JsonNode node, Set<String> expected) throws IOException {
-        if (node == null || !node.isObject()) {
-            throw new IOException("expected JSON object");
+        try (InputStream in = Files.newInputStream(path)) {
+            bytes = in.readNBytes(MAX_BYTES + 1);
         }
-        Set<String> names = new HashSet<>();
-        node.fieldNames().forEachRemaining(names::add);
-        if (!names.equals(expected)) {
-            throw new IOException("missing or unknown fields");
+
+        if (bytes.length > MAX_BYTES) {
+            throw new IOException("File exceeds size limit");
         }
+
+        JsonNode root = mapper.readTree(bytes);
+
+        if (root == null || !root.isObject()) {
+            throw new IOException("Expected a JSON object");
+        }
+
+        requireExactFields(root, Set.of("schema", "materials"));
+
+        JsonNode schemaNode = root.get("schema");
+        JsonNode materialsNode = root.get("materials");
+
+        if (schemaNode == null
+                || !schemaNode.isIntegralNumber()
+                || !schemaNode.canConvertToInt()
+                || schemaNode.intValue() != 1) {
+            throw new IOException("Unsupported JSON schema");
+        }
+
+        if (materialsNode == null || !materialsNode.isArray()) {
+            throw new IOException("Expected materials to be an array");
+        }
+
+        List<Material> materials = new ArrayList<>();
+        Set<String> ids = new HashSet<>();
+
+        for (JsonNode node : materialsNode) {
+
+            requireExactFields(
+                    node,
+                    Set.of("id", "title", "kind", "cents"));
+
+            JsonNode idNode = node.get("id");
+            JsonNode titleNode = node.get("title");
+            JsonNode kindNode = node.get("kind");
+            JsonNode centsNode = node.get("cents");
+
+            if (!idNode.isTextual()
+                    || !titleNode.isTextual()
+                    || !kindNode.isTextual()
+                    || !centsNode.isIntegralNumber()
+                    || !centsNode.canConvertToLong()) {
+                throw new IOException("Invalid material field types");
+            }
+
+            long cents = centsNode.longValue();
+
+            if (cents < 0) {
+                throw new IOException("Cents cannot be negative");
+            }
+
+            Material material;
+
+            try {
+                Material.Kind kind =
+                        Material.Kind.valueOf(kindNode.textValue());
+
+                material = new Material(
+                        idNode.textValue(),
+                        titleNode.textValue(),
+                        kind,
+                        cents);
+
+            } catch (IllegalArgumentException e) {
+                throw new IOException("Invalid material data", e);
+            }
+
+            if (!ids.add(material.id())) {
+                throw new IOException(
+                        "Duplicate material ID",
+                        new IllegalArgumentException("Duplicate ID: " + material.id()));
+            }
+
+            materials.add(material);
+        }
+
+        materials.sort(Comparator.comparing(Material::id));
+
+        return List.copyOf(materials);
     }
 
     @Override
-    public synchronized void save(List<Material> materials) throws IOException {
-        // TODO T6: implement the documented contract; see the acceptance tests.
-        //throw new UnsupportedOperationException("TODO T6");
-            // 1. Validate the list and create a copy.
-            if (materials == null) {
-                throw new IOException("Materials list cannot be null");
+    public synchronized void save(List<Material> materials)
+            throws IOException {
+
+        if (materials == null) {
+            throw new IllegalArgumentException("Materials cannot be null");
+        }
+
+        List<Material> copy = new ArrayList<>(materials);
+        Set<String> ids = new HashSet<>();
+
+        for (Material material : copy) {
+
+            if (material == null) {
+                throw new IllegalArgumentException("Material cannot be null");
             }
 
-            List<Material> copy = new ArrayList<>(materials);
-
-            // 2. Check for null materials and duplicate IDs.
-            Set<String> ids = new HashSet<>();
-
-            for (Material material : copy) {
-
-                if (material == null) {
-                    throw new IOException("Material cannot be null");
-                }
-
-                if (!ids.add(material.id())) {
-                    throw new IOException("Duplicate material ID");
-                }
-            }
-
-            // 3. Sort the materials by ID.
-            copy.sort(Comparator.comparing(Material::id));
-
-            // 4. Create the JSON structure.
-            ObjectNode root = mapper.createObjectNode();
-
-            ArrayNode array = root.putArray("materials");
-
-            for (Material material : copy) {
-
-                ObjectNode item = array.addObject();
-
-                item.put("id", material.id());
-                item.put("title", material.title());
-                item.put("kind", material.kind().name());
-                item.put("cents", material.cents());
-            }
-
-            // 5. Convert the JSON structure into bytes.
-            byte[] jsonBytes = mapper.writeValueAsBytes(root);
-
-            // 6. Check the file size.
-            if (jsonBytes.length > MAX_BYTES) {
-                throw new IOException("File exceeds size limit");
-            }
-
-            // 7. Create a temporary file in the same directory.
-            Path parent = path.getParent();
-
-            Path temp = Files.createTempFile(
-                    parent,
-                    "catalog-",
-                    ".tmp"
-            );
-
-            boolean moved = false;
-
-            try {
-
-                // 8. Write the JSON into the temporary file.
-                Files.write(temp, jsonBytes);
-
-                // 9. Replace the original file atomically.
-                mover.move(temp, path);
-
-                moved = true;
-
-            } finally {
-
-                // 10. Delete the temporary file if the move failed.
-                if (!moved) {
-                    Files.deleteIfExists(temp);
-                }
+            if (!ids.add(material.id())) {
+                throw new IllegalArgumentException(
+                        "Duplicate material ID: " + material.id());
             }
         }
 
-    }
+        copy.sort(Comparator.comparing(Material::id));
 
+        ObjectNode root = mapper.createObjectNode();
+
+        root.put("schema", 1);
+
+        ArrayNode array = root.putArray("materials");
+
+        for (Material material : copy) {
+
+            ObjectNode item = array.addObject();
+
+            item.put("id", material.id());
+            item.put("title", material.title());
+            item.put("kind", material.kind().name());
+            item.put("cents", material.cents());
+        }
+
+        byte[] jsonBytes = mapper.writeValueAsBytes(root);
+
+        if (jsonBytes.length > MAX_BYTES) {
+            throw new IOException("File exceeds size limit");
+        }
+
+        Path parent = path.getParent();
+
+        Files.createDirectories(parent);
+
+        Path temp = Files.createTempFile(
+                parent,
+                "catalog-",
+                ".tmp");
+
+        boolean moved = false;
+
+        try {
+            Files.write(temp, jsonBytes);
+
+            mover.move(temp, path);
+
+            moved = true;
+
+        } finally {
+            if (!moved) {
+                Files.deleteIfExists(temp);
+            }
+        }
+    }
+}
