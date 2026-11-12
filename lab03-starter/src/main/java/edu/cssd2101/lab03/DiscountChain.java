@@ -2,7 +2,7 @@ package edu.cssd2101.lab03;
 
 import java.util.Optional;
 
-/** Immutable Chain of Responsibility: Manager 15%, Director 25%, VP 40%, then refusal. */
+
 public final class DiscountChain {
     private record Handler(String role, int maximum, Handler next) {
         Optional<String> approve(int rate) {
@@ -17,7 +17,7 @@ public final class DiscountChain {
             new Handler(
                     "Manager", 1500, new Handler("Director", 2500, new Handler("VP", 4000, null)));
 
-    /** Creates the fixed, acyclic approval chain used by this lab. */
+    
     public DiscountChain() {}
 
     /**
@@ -38,7 +38,16 @@ public final class DiscountChain {
      * @throws IllegalArgumentException for an invalid amount or rate
      */
     public Decision decide(long priceCents, int basisPoints) {
-        // TODO T4: implement the documented contract; see the acceptance tests.
-        throw new UnsupportedOperationException("TODO T4");
+        if (priceCents < 0) {
+            throw new IllegalArgumentException("negative price");
+        }
+        if (basisPoints < 0 || basisPoints > 10000) {
+            throw new IllegalArgumentException("basisPoints must be 0..10000");
+        }
+        Optional<String> approver = first.approve(basisPoints);
+        long finalCents = approver.isPresent()
+                ? Money.discounted(priceCents, basisPoints)
+                : priceCents;
+        return new Decision(approver, basisPoints, finalCents);
     }
 }
