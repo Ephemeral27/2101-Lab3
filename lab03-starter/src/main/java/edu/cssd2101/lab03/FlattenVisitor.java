@@ -20,7 +20,7 @@ public final class FlattenVisitor implements ComponentVisitor<List<Material>> {
         for (Component child: bundle.children()){
             resultMaterials.addAll(child.accept(this));
         }
-        return resultMaterials;
+        return List.copyOf(resultMaterials);
         //throw new UnsupportedOperationException("TODO T3");
     }
 
